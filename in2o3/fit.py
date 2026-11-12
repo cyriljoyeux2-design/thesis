@@ -143,16 +143,41 @@ def dicts_to_params(energy, sk_params, params_names):
 
     return params
 
+class In2O3Fit(tb.ParamFit):
+    def __init__(self, k_points, weights, bands_ref, n_val, atoms, energy_ref, sk_ref, params_names):
+        if bands_ref.shape[0] != len(k_points):
+            raise ValueError(f"bands_ref a {bands_ref.shape[0]} points k, "
+                             f"mais {len(k_points)} points k ont été fournis")
+        self.bands_ref = bands_ref
+        self.n_val = n_val
+        self.params_names = params_names
+        self.energy_ref = energy_ref
+        self.sk_ref = sk_ref
+        self.atoms = atoms
+        super().__init__(k_points, weights)
+
+    def calc_bands_ref(self):
+
+        return self.bands_ref
+
+    def calc_bands_fit(self, params):
+        energy, sk_params = params_to_dicts(params, self.energy_ref, self.sk_ref, self.params_names)
+
+        cell = make_in2o3_cell(energy, sk_params, self.atoms)
+        bands = tb_bands(cell, self._k_points, self.n_val)
+
+        return bands
+
 if __name__ == "__main__":
     file_name ="data-file-schema.xml"
     params_file_name = "params/test.json"
-    energy_start, sk_start = read_params(params_file_name)
-    PARAMS_NAME = ["E_In_s", "E_O_p", "SK_In-O_sps", "SK_O-O_pps", "SK_O-O_ppp", "SK_In-In_sss"]
-    params = np.array([-4.7, -15.8, 0.55, 1.23, -0.03, -0.32])
-    energy, sk_params = params_to_dicts(params, energy_start, sk_start, PARAMS_NAME)
-    params_rt = dicts_to_params(energy_start, sk_start, PARAMS_NAME)
-    e_zero, sk_zero = params_to_dicts(np.zeros(len(PARAMS_NAME)), energy_start, sk_start, PARAMS_NAME)
-    assert (energy_start, sk_start) == params_to_dicts(params_rt, e_zero, sk_zero, PARAMS_NAME), \
+    energy_ref, sk_ref = read_params(params_file_name)
+    PARAMS_NAME = ["E_In_s", "SK_In-O_sps", "SK_O-O_pps", "SK_O-O_ppp", "SK_In-In_sss"]
+    #params = np.array([-5.0, 0.27, 0.79, -0.21, -0.6])
+    params_ref = dicts_to_params(energy_ref, sk_ref, PARAMS_NAME)
+    energy_start, sk_start = params_to_dicts(params_ref, energy_ref, sk_ref, PARAMS_NAME)
+    e_zero, sk_zero = params_to_dicts(np.zeros(len(PARAMS_NAME)), energy_ref, sk_ref, PARAMS_NAME)
+    assert (energy_ref, sk_ref) == params_to_dicts(params_ref, e_zero, sk_zero, PARAMS_NAME), \
            "Échec du test d'aller-retour depuis des dictionnaires à zéro"
     label = ["G", "N", "P", "G", "H", "N"]
     k_cart, energies_ev, nbnd, n_k = bands_read(file_name)
@@ -164,18 +189,19 @@ if __name__ == "__main__":
     k_symm = find_corners(k_cart)
     band_group, n_band_group, en_band_group = find_manifolds(energies_fermi, nbnd)
     ref_atoms = read_structure(file_name)
-    TB_cell = make_in2o3_cell(energy, sk_params, ref_atoms)
+    TB_cell = make_in2o3_cell(energy_ref, sk_ref, ref_atoms)
     check_lattice(TB_cell, ref_atoms)
     n_val = 3 * ref_atoms.get_chemical_symbols().count("O")
     assert n_val == n_occ - band_group[2,0], "Le dessus de la bande de valence n'est pas équivalente aux deux modeles"
     bands_shifted = tb_bands(TB_cell, k_frac, n_val)
+    weights = np.ones(TB_cell.num_orb)
     regions = {
-            "valence":          (band_group[2, 0], n_band_group[2], 0, n_val), # 72 orbitales O2p
-            "1re conduction":   (band_group[3, 0], 1, n_val, n_val + 1),
-            "conduction haute": (band_group[3, 0] + 1, n_band_group[3] - 3, n_val + 1, None),
+            "valence":          (band_group[2, 0], n_band_group[2] - 3, 0, n_val - 3, 0.1), # 72 orbitales O2p
+            "1re conduction":   (band_group[3, 0] - 3, 6, n_val - 3, n_val + 3, 10.0),
+            "conduction haute": (band_group[3, 0] + 3, n_band_group[3] - 5, n_val + 3, None, 3.0),
     }
-
-    for nom, (first_dft, n_dft, first_band, last_band) in regions.items():
+    for nom, (first_dft, n_dft, first_band, last_band, w) in regions.items():
+        weights[first_band:last_band] = w
         window_dft = select_window(energies_fermi, first_dft, n_dft)
         RMS, d = band_errors(bands_shifted, window_dft, first_band, last_band)
         print("==============================================================================================")
@@ -185,59 +211,48 @@ if __name__ == "__main__":
         print(f"Ecart max des bandes d'énergies entre la référence dft et le modele TB de la bande de {nom}", d[idx_k, idx_b])
         print(f"Position de l'ecart max des bandes d'énergies entre la référence dft et le modele TB de la bande de {nom}", k_frac[idx_k,:])
 
+    cell_ref = make_in2o3_cell(energy_ref, sk_ref, ref_atoms)
+    #bands_ref = tb_bands(cell_ref, k_frac, n_val)
+    bands_ref = select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb)
+    fit_synth = In2O3Fit(k_frac, weights, bands_ref, n_val, ref_atoms, energy_start, sk_start, PARAMS_NAME)
+    #ecart_ref = np.max(np.abs(fit_synth.calc_bands_fit(params_ref) - fit_synth.calc_bands_ref()))
+    #ecart_depart = np.max(np.abs(fit_synth.calc_bands_fit(params) - fit_synth.calc_bands_ref()))
+    #print(f"Écart avec les paramètres de référence : {ecart_ref:.2e} eV")
+    #print(f"Écart avec le point de départ          : {ecart_depart:.2e} eV")
 
+    #assert ecart_ref < 1e-8, "Le modèle ne reproduit pas la référence avec les paramètres de référence"
+    #assert ecart_depart > 1e-3, "Le modèle ne réagit pas aux changements de paramètres"
+    res_synth = fit_synth.fit(params_ref)
+    energy_fit, sk_fit = params_to_dicts(res_synth, energy_ref, sk_ref, PARAMS_NAME)
+    for nom, ref, fit in zip(PARAMS_NAME, params_ref, res_synth):
+        print(f"{nom:>15} {ref:10.4f} {fit:10.4f}")
+    cell_fit = make_in2o3_cell(energy_fit, sk_fit, ref_atoms)
+    bands_fit = tb_bands(cell_fit, k_frac, n_val)
+
+    for nom, (first_dft, n_dft, first_band, last_band, w) in regions.items():
+        window_dft = select_window(energies_fermi, first_dft, n_dft)
+        RMS, d = band_errors(bands_fit, window_dft, first_band, last_band)
+        print("==============================================================================================")
+        #print(first_band)
+        idx_k, idx_b =  np.unravel_index(np.argmax(np.abs(d)), d.shape)
+        print(f"Ecart quadratique des bandes d'énergies entre la référence dft et le modele TB de la bande de {nom}", RMS)
+        print(f"Ecart max des bandes d'énergies entre la référence dft et le modele TB de la bande de {nom}", d[idx_k, idx_b])
+        print(f"Position de l'ecart max des bandes d'énergies entre la référence dft et le modele TB de la bande de {nom}", k_frac[idx_k,:])
+    
     plt.figure()
-    plt.plot(k_len, select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb), "k-", lw=0.8)
-    #plt.plot(k_len, window, "r--", lw=1)
-    plt.plot(k_len, bands_shifted, "r--", lw=0.8)
+    #plt.plot(k_len, select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb), "k-", lw=0.8)
+    plt.plot(k_len, bands_ref, "k-", lw=1)
+    plt.plot(k_len, bands_fit, "r--", lw=0.8)
     plt.xticks(k_len[k_symm], label)
     plt.xlabel("k (1/ang)")
-    plt.ylim(-6, 9)
+    #plt.ylim(-6, 9)
     plt.ylabel("Energy (eV)")
     for i in range(len(k_symm)):
         plt.axvline(k_len[k_symm[i]], color="grey", lw=0.5)
 
     plt.axhline(0, color="grey", lw=0.5)
-    plt.savefig("TB_dft.png", dpi=200)
+    plt.savefig("TB_fit.png", dpi=200)
 
     #==================================================================================================
     # Affichage
     #==================================================================================================
-    #print(k_cart.shape)
-    #print(energies_ev.shape)
-    #print("Nombre de bandes:", nbnd)                     # 194
-    #print("Nombre de k points:", n_k)                    # 151
-    #print("Coordonnées du premier point k:", k_cart[0])  # [0 0 0]
-    #print("Coordonnées du sernier point k:", k_cart[-1]) # [4.330127018922194E-01   4.330127018922194E-01  -1.306919376461998E-17]
-    #print("Energie des 5 bandes les plus hautes au point gamma:", np.round(energies_ev[0,-5:],3))
-    #print("Energie des 5 bandes les plus basses au point gamma:", np.round(energies_ev[0,:5],3))
-    #print("==============================================================================================")
-    #print("Paramètre de maille:", alat)
-    #print("Vecteurs du réseau réciproque:", B)
-    #print("Coordonnées réduite du premier point k (gamma):", np.round(k_frac[0],3))
-    #print("Coordonnées réduite du dernier point k (N):", np.round(k_frac[-1],3))
-    #print("Longueur totale du chemin k:", k_len[-1])
-    #print("==============================================================================================")
-    #print("Nombre de bandes occupées:", n_occ)
-    #print("Energie du gap indirect:", gap)
-    #print("Coordonnées réduites du haut de la bande de valence:", k_frac[k_max,:])
-    #print("Coordonnées réduites du bas de la bande de conduction:", k_frac[k_min,:])
-    #print("Coordonnées des points de hautes symétrie:")
-    #print("G:", np.round(k_frac[k_symm[0],:],2))
-    #print("N:", np.round(k_frac[k_symm[1],:],2))
-    #print("P:", np.round(k_frac[k_symm[2],:],2))
-    #print("G:", np.round(k_frac[k_symm[3],:],2))
-    #print("H:", np.round(k_frac[k_symm[4],:],2))
-    #print("N:", np.round(k_frac[k_symm[-1],:],2))
-    #print("Indices des points de haute symmétrie:", k_symm)
-    #print("Ecart entre le maximum de la bande de valence et l'énergie au point Gamma (eV):", VBM - energies_fermi[0, n_occ-1] )
-    #print("==============================================================================================")
-    #print(f"{'Groupe':>6} {'Première':>9} {'Dernière':>9} {'Nombre':>7} {'E_min (eV)':>11} {'E_max (eV)':>11}")
-    #for i in range(len(band_group)):
-    #    print(f"{i:6d} {band_group[i,0]:9d} {band_group[i,1]:9d} {n_band_group[i]:7d} {en_band_group[i,0]:11.2f} {en_band_group[i,1]:11.2f}")
-    #print("==============================================================================================")
-    #print(energy)
-    #print(sk_params)
-    print(energy)
-    print(sk_params)
-    print(params)
