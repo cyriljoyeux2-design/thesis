@@ -4,107 +4,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tbplas as tb
-from in2o3 import read_params, make_in2o3_orbitals, make_in2o3_cell
+from in2o3 import read_params, write_params, make_in2o3_orbitals, make_in2o3_cell
 from qe_xml import bands_read, read_reciprocal, read_structure, read_nelec
+from calc_bands import cart_to_frac, k_path_length, align_bands, find_corners, tb_bands, find_manifolds, select_window, check_lattice, band_errors
 import copy
 np.set_printoptions(legacy="1.25")
-
-
-def cart_to_frac(k_cart, B):
-    k_frac = k_cart @ np.linalg.inv(B)
-
-    if np.allclose(k_cart, k_frac @ B) == False:
-        raise ValueError(f"Problème dans la convertion en coordonnées réduite des k points")
-
-    return k_frac
-
-
-def k_path_length(k_cart, alat):
-    k_len = np.concatenate(([0.0], np.cumsum(np.linalg.norm(np.diff(k_cart, axis=0), axis=1)))) * 2*np.pi/alat
-
-    return k_len
-
-
-def align_bands(energies_ev, nelec):
-    n_occ = int(nelec/2)
-    k_max = np.argmax(energies_ev[:,n_occ-1])
-    k_min = np.argmin(energies_ev[:,n_occ])
-    energies_fermi = energies_ev - energies_ev[k_max,n_occ-1]
-    VBM = energies_fermi[k_max,n_occ-1]
-    CBM = energies_fermi[k_min,n_occ]
-    gap = CBM - VBM
-
-    return n_occ, VBM, CBM, gap, k_max, k_min, energies_fermi
-
-
-def find_corners(k_cart):
-    d1 = np.diff(k_cart, axis=0) # * 2*np.pi/alat
-    d = d1 / np.linalg.norm(d1, axis=1)[:, None]
-    p = np.sum(np.concatenate(([[0.0, 0.0, 0.0]], d)) * np.concatenate((d, [[0.0, 0.0, 0.0]])), axis=1)
-    k_symm = np.where(p < 0.99)[0]
-
-    return k_symm
-
-
-def find_manifolds(energies_fermi, nbnd, tol=0.05):
-    band_max = np.max(energies_fermi, axis=0)
-    band_min = np.min(energies_fermi, axis=0)
-    band_delta = band_min[1:] - band_max[:-1]
-    band_gap = np.concatenate(([-1], np.where(band_delta > tol)[0], [nbnd-1]))
-
-    band_group = []
-    for i in range(len(band_gap)-1):
-        band_group.append((band_gap[i]+1, band_gap[i+1]))
-    band_group = np.array(band_group)
-
-    n_band_group = band_group[:, 1] - band_group[:, 0] + 1
-    en_band_group = np.array([np.min(energies_fermi[:,band_group[:,0]], axis=0), np.max(energies_fermi[:,band_group[:,1]], axis=0)]).T
-
-    return band_group, n_band_group, en_band_group
-
-
-def select_window(energies, first, n_band):
-
-    if first < 0:
-        raise ValueError(f"L'indexe de la première bande est négatif {first}")
-
-    if n_band + first > energies.shape[1]:
-        raise ValueError(f"La fenêtre sélectionnée dépasse le nombre totale de bandes calculées ({n_band - first} pour un totale de {energies.shape[1]} bandes)")
-
-    return energies[:, first:first+ n_band]
-
-
-def check_lattice(TB_cell, ref_atoms, tol=1e-5):
-    diff = np.abs(TB_cell.lat_vec*10 - ref_atoms.cell.array)
-    if np.max(diff) > tol:
-        raise ValueError(f"Au moins une coordonnée de la maille du modèle différe de la maille de référence au dela du seuil {diff}")
-
-
-def tb_bands(TB_cell, k_frac, n_occ):
-    k_TB, bands = TB_cell.calc_bands(k_frac)
-    bands = np.sort(bands, axis=1)
-
-    vbm = bands[:, n_occ - 1].max()
-    cbm = bands[:, n_occ].min()
-    bands_shifted = bands - vbm
-
-    return bands_shifted
-
-
-def band_errors(bands_shifted, window_dft, first_band, last_band, tol=1e-8):
-    if bands_shifted[:, first_band:last_band].shape != window_dft.shape:
-        raise ValueError(f"Les deux modèles n'ont pas le même nombre de point k et de bandes: TB={bands_shifted.shape}, dft={window_dft.shape}")
-
-    if np.any(np.diff(bands_shifted, axis=1) < - tol) == True:
-        raise ValueError(f"Les bandes ne sont pas triées par ordre croissant d'énergie sur tous les points k pour le modèle TB")
-
-    if np.any(np.diff(window_dft, axis=1) < - tol) == True:
-        raise ValueError(f"Les bandes ne sont pas triées par ordre croissant d'énergie sur tous les points k pour le modèle dft")
-
-    RMS = np.sqrt(np.mean((bands_shifted[:, first_band:last_band] - window_dft)**2))
-    d = bands_shifted[:, first_band:last_band] - window_dft
-
-    return RMS, d
 
 
 def params_to_dicts(params, energy_start, sk_start, params_names):
@@ -214,20 +118,14 @@ if __name__ == "__main__":
     cell_ref = make_in2o3_cell(energy_ref, sk_ref, ref_atoms)
     #bands_ref = tb_bands(cell_ref, k_frac, n_val)
     bands_ref = select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb)
-    fit_synth = In2O3Fit(k_frac, weights, bands_ref, n_val, ref_atoms, energy_start, sk_start, PARAMS_NAME)
-    #ecart_ref = np.max(np.abs(fit_synth.calc_bands_fit(params_ref) - fit_synth.calc_bands_ref()))
-    #ecart_depart = np.max(np.abs(fit_synth.calc_bands_fit(params) - fit_synth.calc_bands_ref()))
-    #print(f"Écart avec les paramètres de référence : {ecart_ref:.2e} eV")
-    #print(f"Écart avec le point de départ          : {ecart_depart:.2e} eV")
-
-    #assert ecart_ref < 1e-8, "Le modèle ne reproduit pas la référence avec les paramètres de référence"
-    #assert ecart_depart > 1e-3, "Le modèle ne réagit pas aux changements de paramètres"
-    res_synth = fit_synth.fit(params_ref)
-    energy_fit, sk_fit = params_to_dicts(res_synth, energy_ref, sk_ref, PARAMS_NAME)
-    for nom, ref, fit in zip(PARAMS_NAME, params_ref, res_synth):
+    fit_dft = In2O3Fit(k_frac, weights, bands_ref, n_val, ref_atoms, energy_start, sk_start, PARAMS_NAME)
+    res_fit = fit_dft.fit(params_ref)
+    energy_fit, sk_fit = params_to_dicts(res_fit, energy_ref, sk_ref, PARAMS_NAME)
+    for nom, ref, fit in zip(PARAMS_NAME, params_ref, res_fit):
         print(f"{nom:>15} {ref:10.4f} {fit:10.4f}")
     cell_fit = make_in2o3_cell(energy_fit, sk_fit, ref_atoms)
     bands_fit = tb_bands(cell_fit, k_frac, n_val)
+    write_params("params/fit_2026-11-13.json", energy_fit, sk_fit)
 
     for nom, (first_dft, n_dft, first_band, last_band, w) in regions.items():
         window_dft = select_window(energies_fermi, first_dft, n_dft)

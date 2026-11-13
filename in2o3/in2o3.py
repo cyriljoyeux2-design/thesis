@@ -37,6 +37,13 @@ def read_params(params_file_name):
 
     return energy, sk_params
 
+def write_params(params_file_name, energy, sk_params, fit_info=None):
+    data = {"orbital_energy": energy, "sk_params": sk_params}
+    if fit_info is not None:
+        data["fit"] = fit_info
+    with open(params_file_name, "w") as f:
+        json.dump(data, f, indent=2)
+
 def make_in2o3_orbitals(energy, atoms):
     """
     Crée la PrimitiveCell TBPLaS avec toutes les orbitales, sans saut.
