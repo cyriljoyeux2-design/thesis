@@ -1,9 +1,28 @@
-"""Utilitaires pour construire la maille primitive de In2O3 (bixbyite)."""
+"""
+Construction of the tight-binding model of In2O3 (bixbyite) with TBPLaS.
 
+The model is built from a structure (ase.Atoms, ex. read from the DFT reference with
+qe_xml.read_structure) and two parameter dictionaries (see params.py):
+    - on-site energies, per species and orbital;
+    - Slater-Koster parameters, per pair of species.
+This module does not read any file: the structure and the parameters are given as arguments.
+
+Orbital basis: defined by orbital_label (currently In 5s and O 2p).
+Hopping terms: Slater-Koster two-centre integrals between all orbital pairs closer than a
+cutoff distance, either given directly in eV ("eV" mode) or scaled as eta * hbar^2/(m d^2)
+("harrison" mode, valid for s and p orbitals only).
+
+Ref:
+[1] https://www.frontiersin.org/journals/materials/articles/10.3389/fmats.2024.1380180/full
+
+Functions:
+    make_in2o3_orbitals : primitive cell with the orbitals and on-site energies, no hopping.
+    calc_hop_in2o3      : hopping integral between two orbitals.
+    make_in2o3_cell     : complete primitive cell (orbitals and hopping terms).
+"""
 import numpy as np
 import tbplas as tb
 from scipy.constants import hbar, m_e, e, angstrom
-import json
 
 
 orbital_label = {"In": ("s",),
@@ -28,27 +47,17 @@ orbital_label = {"In": ("s",),
 #    cellpar = [a, a, a, 90, 90, 90]
 #    return crystal(symbols=symbols,basis=basis,spacegroup=spacegroup,cellpar=cellpar,primitive_cell=primitive)
 
-def read_params(params_file_name):
-    with open(params_file_name) as f:
-        data = json.load(f)
-
-        energy = data["orbital_energy"]
-        sk_params = data["sk_params"]
-
-    return energy, sk_params
-
-def write_params(params_file_name, energy, sk_params, fit_info=None):
-    data = {"orbital_energy": energy, "sk_params": sk_params}
-    if fit_info is not None:
-        data["fit"] = fit_info
-    with open(params_file_name, "w") as f:
-        json.dump(data, f, indent=2)
 
 def make_in2o3_orbitals(energy, atoms):
     """
-    Crée la PrimitiveCell TBPLaS avec toutes les orbitales, sans saut.
+    Create the TBPLaS primitive cell with all the orbitals and no hopping term.
 
-    :param onsite: énergies sur site par espèce et par type d'orbitale
+    The lattice vectors and the atomic positions are those of atoms. Each atom carries
+    the orbitals of orbital_label, labelled "<species>_<orbital>" (ex. "O_px").
+
+    :param energy: on-site energies, {species: {orbital type: energy in eV}}, where the
+                   orbital type is the first letter of the orbital ("s", "p"...)
+    :param atoms: ase.Atoms, structure in Angstrom
     :return: tb.PrimitiveCell
     """
     cell = tb.PrimitiveCell(atoms.cell.array, unit=tb.ANG)
@@ -71,18 +80,19 @@ def calc_hop_in2o3(sk: tb.SK, rij: np.ndarray, distance: float,
                    label_i: str, label_j: str,
                    params: dict) -> complex:
     """
-    Évalue l'intégrale de saut <i,0|H|j,R> entre premiers voisins In–O.
+    Evaluate the hopping integral <i,0|H|j,R> between two orbitals (Slater-Koster).
 
-    Ref:
-    [1] https://www.frontiersin.org/journals/materials/articles/10.3389/fmats.2024.1380180/full
+    The parameters of the pair are looked up as "A-B" or "B-A" in params. In "harrison"
+    mode, they are multiplied by hbar^2/(m d^2); in "eV" mode, they are used directly.
 
-    :param sk: instance SK
-    :param rij: vecteur de l'orbitale i vers l'orbitale j, en nm
-    :param distance: norme de rij, en nm
-    :param label_i: label de l'orbitale i (ex. "In_s")
-    :param label_j: label de l'orbitale j (ex. "O_px")
-    :param params: jeu de paramètres, en mode "harrison" ou "eV"
-    :return: intégrale de saut en eV
+    :param sk: tb.SK instance
+    :param rij: (3,) float array, vector from orbital i to orbital j, in nm
+    :param distance: norm of rij, in nm
+    :param label_i: label of orbital i (ex. "In_s")
+    :param label_j: label of orbital j (ex. "O_px")
+    :param params: SK parameters dictionary, {"A-B": {"mode": ..., "sss": ..., ...}}
+    :return: hopping integral in eV
+    :raises ValueError: if the mode is neither "harrison" nor "eV"
     """
     sym_i, lm_i = label_i.split("_")
     sym_j, lm_j = label_j.split("_")
@@ -117,7 +127,19 @@ def calc_hop_in2o3(sk: tb.SK, rij: np.ndarray, distance: float,
 
 
 def make_in2o3_cell(energy, sk_params, atoms, cutoff=0.5):
-    """Maille TBPLaS complète : orbitales + sauts In–O. cutoff en nm."""
+    """
+    Build the complete TBPLaS primitive cell: orbitals and hopping terms.
+
+    Hopping terms are added for every orbital pair closer than cutoff (except orbitals
+    of the same atom), and kept only if larger than 1e-8 eV. Each pair is added once:
+    TBPLaS adds the conjugate term itself.
+
+    :param energy: on-site energies dictionary (see make_in2o3_orbitals)
+    :param sk_params: SK parameters dictionary (see calc_hop_in2o3)
+    :param atoms: ase.Atoms, structure in Angstrom
+    :param cutoff: maximum hopping distance, in nm
+    :return: tb.PrimitiveCell
+    """
     cell = make_in2o3_orbitals(energy, atoms)
     neighbors = tb.find_neighbors(cell, a_max=3, b_max=3, c_max=3,
                                   max_distance=cutoff)
@@ -132,4 +154,3 @@ def make_in2o3_cell(energy, sk_params, atoms, cutoff=0.5):
         if abs(hop) > 1e-8:
             cell.add_hopping(term.rn, i, j, hop)
     return cell
-

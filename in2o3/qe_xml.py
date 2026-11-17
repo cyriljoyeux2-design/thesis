@@ -1,3 +1,18 @@
+"""
+Reading of a Quantum ESPRESSO XML output file (prefix.save/data-file-schema.xml).
+
+All quantities are read in the "output" block of the file, i.e. for the final state of
+the calculation. Lengths are converted from Bohr to Angstrom and energies from Hartree
+to eV.
+
+Functions:
+    bands_read      : k-points (Cartesian, 2pi/alat units) and band energies (eV).
+    read_reciprocal : lattice parameter alat (Angstrom) and reciprocal lattice vectors.
+    read_nelec      : number of electrons.
+    read_structure  : crystal structure as an ase.Atoms object.
+
+To use another reference code, write a module providing the same quantities.
+"""
 import xml.etree.ElementTree as ET         # lecture des fichiers XML
 from ase.units import Hartree, Bohr
 import numpy as np
@@ -8,6 +23,17 @@ from ase import Atoms
 #==================================================================================================
 
 def bands_read(file_name):
+    """
+    Read the k-points and the band energies.
+
+    :param file_name: path to the QE XML file
+    :return: (k_cart, energies_ev, nbnd, n_k)
+        k_cart: (n_k, 3) float array, k-points in Cartesian coordinates, 2pi/alat units
+        energies_ev: (n_k, nbnd) float array, band energies in eV (absolute QE scale)
+        nbnd: number of bands
+        n_k: number of k-points
+    :raises ValueError: if the arrays do not match nbnd and n_k declared in the file
+    """
     # ET.parse() extrait la structure du fichier sous forme d'arbre (dossier/sous-dosier/...) et
     # getroot() extrait la racine (<qes:espresso>)
     root = ET.parse(file_name).getroot()
@@ -49,12 +75,18 @@ def bands_read(file_name):
 
     if energies_ev.shape != (n_k, nbnd):
         raise ValueError(f"Forme innatendue pour la liste des bandes : {energies_ev.shape} au lieu de {(n_k, nbnd)}")
-
     return k_cart, energies_ev, nbnd, n_k
 
 
-
 def read_reciprocal(file_name):
+    """
+    Read the lattice parameter and the reciprocal lattice vectors.
+
+    :param file_name: path to the QE XML file
+    :return: (alat, B)
+        alat: QE length unit in Angstrom (for ibrav = 0, length of the first lattice vector)
+        B: (3, 3) float array, reciprocal vectors b1, b2, b3 as rows, 2pi/alat units
+    """
     root = ET.parse(file_name).getroot()
     bloc_output = root.find("output")
     bloc_b = bloc_output.find("basis_set/reciprocal_lattice")
@@ -68,20 +100,34 @@ def read_reciprocal(file_name):
             vec_reciproc.append(float(vect))
         B.append(vec_reciproc)
     B = np.array(B)
-
     return alat, B
 
+
 def read_nelec(file_name):
+    """
+    Read the number of electrons.
+
+    :param file_name: path to the QE XML file
+    :return: number of electrons (int)
+    :raises ValueError: if the number of electrons is odd (spin-polarised case not handled)
+    """
     root = ET.parse(file_name).getroot()
     bloc_output = root.find("output")
     nelec = int(float(bloc_output.find("band_structure/nelec").text))
 
     if nelec % 2 != 0:
         raise ValueError(f"Nombre impaire d'électron détecté (nelec).")
-
     return nelec
 
+
 def read_structure(file_name):
+    """
+    Read the crystal structure (lattice vectors, species and atomic positions).
+
+    :param file_name: path to the QE XML file
+    :return: ase.Atoms, lattice and Cartesian positions in Angstrom, periodic in 3D
+    :raises ValueError: if the <atomic_structure> block is missing
+    """
     root = ET.parse(file_name).getroot()
     bloc_struct = root.find("output/atomic_structure")
 
@@ -132,6 +178,5 @@ def read_structure(file_name):
     # Liste de listes -> tableau numpy (N, 3), puis conversion Bohr -> Å
     positions_bohr = np.array(positions_bohr)
     positions_angstrom = positions_bohr * Bohr
-
     return Atoms(symbols=symbols, cell=cell_angstrom,
                  positions=positions_angstrom, pbc=True)

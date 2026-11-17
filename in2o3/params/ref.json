@@ -1,0 +1,36 @@
+{
+  "orbital_energy": {
+    "In": {
+      "s": -5.0
+    },
+    "O": {
+      "p": -14.1
+    }
+  },
+  "sk_params": {
+    "In-O": {
+      "source": "[1] https://www.frontiersin.org/journals/materials/articles/10.3389/fmats.2024.1380180/full",
+      "mode": "harrison",
+      "sss": 0.0,
+      "sps": 0.27,
+      "pps": 0.0,
+      "ppp": 0.0
+    },
+    "O-O": {
+      "source": "Ref. [1]",
+      "mode": "harrison",
+      "sss": 0.0,
+      "sps": 0.0,
+      "pps": 0.79,
+      "ppp": -0.21
+    },
+    "In-In": {
+      "source": "Ref. [1]",
+      "mode": "harrison",
+      "sss": -0.6,
+      "sps": 0.0,
+      "pps": 0.0,
+      "ppp": 0.0
+    }
+  }
+}

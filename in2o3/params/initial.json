@@ -1,0 +1,46 @@
+{
+  "source": "https://www.frontiersin.org/journals/materials/articles/10.3389/fmats.2024.1380180/full",
+  "orbital_energy": {
+    "In": {
+      "s":     -5.0,
+      "px":     0.0,
+      "py":     0.0,
+      "pz":     0.0,
+      "dz2":    0.0,
+      "dzx":    0.0,
+      "dyz":    0.0,
+      "dx2-y2": 0.0,
+      "dxy":    0.0
+    },
+    "O": {
+      "s":      0.0,
+      "px":   -14.1,
+      "py":   -14.1,
+      "pz":   -14.1
+    }
+  },
+  "sk_params": {
+    "In-O": {
+      "mode": "harrison",
+      "sss": 0.0,
+      "sps": 0.27,
+      "pss": 0.27,
+      "pps": 0.0,
+      "ppp": 0.0
+    },
+    "O-O": {
+      "mode": "harrison",
+      "sss": 0.0,
+      "sps": 0.0,
+      "pps": 0.79,
+      "ppp": -0.21
+    },
+    "In-In": {
+      "mode": "harrison",
+      "sss": -0.6,
+      "sps": 0.0,
+      "pps": 0.0,
+      "ppp": 0.0
+    }
+  }
+}
