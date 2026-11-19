@@ -32,6 +32,7 @@ from in2o3 import make_in2o3_orbitals, make_in2o3_cell
 from qe_xml import bands_read, read_reciprocal, read_structure, read_nelec
 from calc_bands import cart_to_frac, k_path_length, align_bands, find_corners, tb_bands, find_manifolds, select_window, check_lattice, band_errors
 from params import read_params, write_params, params_to_dicts, dicts_to_params
+from pathlib import Path
 np.set_printoptions(legacy="1.25")
 
 class In2O3Fit(tb.ParamFit):
@@ -106,11 +107,11 @@ def report_errors(bands_tb, bands_ref, regions, k_frac):
 
 if __name__ == "__main__":
     # ----- inputs -----
-    file_name ="data-file-schema.xml"
+    file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "dft_reference" / "data-file-schema.xml"
     params_file_name = "params/ref.json"
-    fitted_params_file_name = "params/fit_2026-11-13.json"
+    fitted_params_file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "fit_2026-11-13.json"
     PARAMS_NAME = ["E_In_s", "SK_In-O_sps", "SK_O-O_pps", "SK_O-O_ppp", "SK_In-In_sss"]
-    OVERRIDES = {"SK_In-O_sps": 0.34}
+    OVERRIDES = {}
 
     # ----- dft variables -----
     k_cart, energies_ev, nbnd, n_k = bands_read(file_name)
@@ -125,11 +126,13 @@ if __name__ == "__main__":
 
     # ----- starting point -----
     energy_ref, sk_ref = read_params(params_file_name, overrides=OVERRIDES)
+    #energy_start, sk_start = params_to_dicts(params, energy_ref, sk_ref, PARAMS_NAME)
     params_ref = dicts_to_params(energy_ref, sk_ref, PARAMS_NAME)
     e_zero, sk_zero = params_to_dicts(np.zeros(len(PARAMS_NAME)), energy_ref, sk_ref, PARAMS_NAME)
     assert (energy_ref, sk_ref) == params_to_dicts(params_ref, e_zero, sk_zero, PARAMS_NAME), \
            "Échec du test d'aller-retour depuis des dictionnaires à zéro"
     cell_start = make_in2o3_cell(energy_ref, sk_ref, ref_atoms)
+    #cell_ref = make_in2o3_cell(energy_ref, sk_ref, ref_atoms)
     check_lattice(cell_start, ref_atoms)
     n_orb = cell_start.num_orb
     n_val = 3 * ref_atoms.get_chemical_symbols().count("O")
@@ -138,11 +141,11 @@ if __name__ == "__main__":
     bands_start = tb_bands(cell_start, k_frac, n_val)
 
     # ----- cutting the bands in multiple region -----
-    n_bords = 3
+    n_bords = 5
     weights = np.ones(n_orb)
-    weights[:n_val - n_bords] = 1.0                    # valence profonde
-    weights[n_val - n_bords:n_val + n_bords] = 10.0    # bord du gap
-    weights[n_val + n_bords:] = 0.1                    # conduction haute
+    weights[:n_val - n_bords] = 0.5                    # valence profonde
+    weights[n_val - n_bords:n_val + n_bords] = 20.0    # bord du gap
+    weights[n_val + n_bords:] = 3.0                    # conduction haute
 
     regions = {
         "valence profonde": slice(0, n_val - n_bords),
@@ -161,9 +164,9 @@ if __name__ == "__main__":
     # ----- results of the fit -----
     energy_fit, sk_fit = params_to_dicts(res_fit, energy_ref, sk_ref, PARAMS_NAME)
     write_params(fitted_params_file_name, energy_fit, sk_fit,
-                 {"reference": file_name, "depart": params_file_name,
-                  "fenetre_dft": [int(band_group[2, 0]), int(band_group[2, 0] + n_orb - 1)],
-                  "poids": weights.tolist(), "param_fittes": PARAMS_NAME})
+                 {"reference": str(file_name), "start": params_file_name,
+                  "dft_window": [int(band_group[2, 0]), int(band_group[2, 0] + n_orb - 1)],
+                  "weights": weights.tolist(), "fitted_parameters": PARAMS_NAME})
     print(f"\n{'parameters':>15} {'start':>10} {'fitted':>10}")
     for nom, ref, fit in zip(PARAMS_NAME, params_ref, res_fit):
         print(f"{nom:>15} {ref:10.4f} {fit:10.4f}")
@@ -189,4 +192,4 @@ if __name__ == "__main__":
         plt.axvline(k_len[k_symm[i]], color="grey", lw=0.5)
 
     plt.axhline(0, color="grey", lw=0.5)
-    plt.savefig("TB_fit.png", dpi=200)
+    plt.savefig(Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "TB_fit.png", dpi=200)

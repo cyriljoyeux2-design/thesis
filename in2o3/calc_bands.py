@@ -26,6 +26,7 @@ import tbplas as tb
 from in2o3 import make_in2o3_orbitals, make_in2o3_cell
 from params import read_params, write_params, params_to_dicts, dicts_to_params
 from qe_xml import bands_read, read_reciprocal, read_structure, read_nelec
+from pathlib import Path
 
 def cart_to_frac(k_cart, B):
     """
@@ -217,8 +218,8 @@ def band_errors(e_tb, e_ref, tol=1e-8):
 
 if __name__ == "__main__":
     # ----- Input files names -----
-    file_name ="data-file-schema.xml"
-    params_file_name = "params/fit_2026-11-13.json"
+    file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "dft_reference" / "data-file-schema.xml"
+    params_file_name = "params/ref.json"
 
     # ----- qe_xml.py varaiables -----
     ref_atoms = read_structure(file_name)
@@ -252,4 +253,4 @@ if __name__ == "__main__":
         plt.axvline(k_len[k_symm[i]], color="grey", lw=0.5)
 
     plt.axhline(0, color="grey", lw=0.5)
-    plt.savefig("bands_in2o3.png", dpi=200)
+    plt.savefig(Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "TB_bands.png", dpi=200)
