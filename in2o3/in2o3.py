@@ -126,7 +126,7 @@ def calc_hop_in2o3(sk: tb.SK, rij: np.ndarray, distance: float,
                    v_pps=params["pps"] * V0, v_ppp=params["ppp"] * V0)
 
 
-def make_in2o3_cell(energy, sk_params, atoms, cutoff=0.5):
+def make_in2o3_cell(energy, sk_params, atoms, cutoff=0.4):
     """
     Build the complete TBPLaS primitive cell: orbitals and hopping terms.
 

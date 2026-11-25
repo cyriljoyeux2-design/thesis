@@ -108,7 +108,7 @@ def report_errors(bands_tb, bands_ref, regions, k_frac):
 if __name__ == "__main__":
     # ----- inputs -----
     file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "dft_reference" / "data-file-schema.xml"
-    params_file_name = "params/ref.json"
+    params_file_name = Path.home() / "work" / "thesis-git" / "in2o3" / "params" / "ref.json"
     fitted_params_file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "fit_2026-11-13.json"
     PARAMS_NAME = ["E_In_s", "SK_In-O_sps", "SK_O-O_pps", "SK_O-O_ppp", "SK_In-In_sss"]
     OVERRIDES = {}
@@ -141,11 +141,11 @@ if __name__ == "__main__":
     bands_start = tb_bands(cell_start, k_frac, n_val)
 
     # ----- cutting the bands in multiple region -----
-    n_bords = 5
+    n_bords = 3
     weights = np.ones(n_orb)
     weights[:n_val - n_bords] = 0.5                    # valence profonde
-    weights[n_val - n_bords:n_val + n_bords] = 20.0    # bord du gap
-    weights[n_val + n_bords:] = 3.0                    # conduction haute
+    weights[n_val - n_bords:n_val + n_bords ] = 10.0    # bord du gap
+    weights[n_val + n_bords :] = 3.0                    # conduction haute
 
     regions = {
         "valence profonde": slice(0, n_val - n_bords),
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     # ----- results of the fit -----
     energy_fit, sk_fit = params_to_dicts(res_fit, energy_ref, sk_ref, PARAMS_NAME)
     write_params(fitted_params_file_name, energy_fit, sk_fit,
-                 {"reference": str(file_name), "start": params_file_name,
+                 {"reference": str(file_name), "start": str(params_file_name),
                   "dft_window": [int(band_group[2, 0]), int(band_group[2, 0] + n_orb - 1)],
                   "weights": weights.tolist(), "fitted_parameters": PARAMS_NAME})
     print(f"\n{'parameters':>15} {'start':>10} {'fitted':>10}")
@@ -186,10 +186,10 @@ if __name__ == "__main__":
     plt.plot(k_len, bands_fit, "r--", lw=0.8)
     plt.xticks(k_len[k_symm], label)
     plt.xlabel("k (1/ang)")
-    #plt.ylim(-6, 9)
+    #plt.ylim(-1, 0.5)
     plt.ylabel("Energy (eV)")
     for i in range(len(k_symm)):
         plt.axvline(k_len[k_symm[i]], color="grey", lw=0.5)
 
     plt.axhline(0, color="grey", lw=0.5)
-    plt.savefig(Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "TB_fit.png", dpi=200)
+    plt.savefig(Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "TB_fit_gap.png", dpi=200)

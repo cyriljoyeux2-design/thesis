@@ -219,7 +219,7 @@ def band_errors(e_tb, e_ref, tol=1e-8):
 if __name__ == "__main__":
     # ----- Input files names -----
     file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "dft_reference" / "data-file-schema.xml"
-    params_file_name = "params/ref.json"
+    params_file_name = Path.home() / "work" / "thesis-data" / "in2o3" / "results" / "fit_2026-11-13.json"
 
     # ----- qe_xml.py varaiables -----
     ref_atoms = read_structure(file_name)
@@ -238,16 +238,17 @@ if __name__ == "__main__":
     k_symm = find_corners(k_cart)
     *_, energies_fermi = align_bands(energies_ev, nelec) 
     band_group, n_band_group, en_band_group = find_manifolds(energies_fermi, nbnd)
+    bands_ref = select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb)
     bands = tb_bands(TB_cell, k_frac, n_val)
 
     # ----- plot settings -----
     plt.figure()
     label = ["G", "N", "P", "G", "H", "N"]
-    plt.plot(k_len, select_window(energies_fermi, band_group[2, 0], TB_cell.num_orb), "k-", lw=0.8)
-    plt.plot(k_len, bands, "r--", lw=0.8)
+    plt.plot(k_len,  bands_ref[:, n_val - 3 : n_val], "k-", lw=0.8)
+    plt.plot(k_len, bands[:, n_val - 3: n_val], "r--", lw=0.8)
     plt.xticks(k_len[k_symm], label)
     plt.xlabel("k (1/ang)")
-    #plt.ylim(-2, 0)
+    #plt.ylim(-0.3, 0.05)
     plt.ylabel("Energy (eV)")
     for i in range(len(k_symm)):
         plt.axvline(k_len[k_symm[i]], color="grey", lw=0.5)
